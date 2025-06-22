@@ -1,8 +1,12 @@
 # install_gtk
 A simple program that will automate installing GTK4 on Windows
-## This GTK4 must be installed this way if you want run any of my applications
 
-You can do the same manually by:
+# Note: GTK4 must be installed this way if you want run any of the Game Hacking Dojo applications
+
+Automatic approach:
+ - Double clicking the application.
+
+Manual approach:
  - Downloading and installing latest vc runtime from "https://aka.ms/vs/17/release/vc_redist.x64.exe", if you don't have it already.
  - Downloading and installing MSYS2 from "https://www.msys2.org/" or "https://github.com/msys2/msys2-installer/releases/"
  - Running the bash file found at "C:\msys64\usr\bin\bash.exe" by default
