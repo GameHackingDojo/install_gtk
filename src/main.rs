@@ -1,6 +1,48 @@
 use reqwest::Client;
 use serde_json::Value;
-use std::{fs::File, io::Write, path::{Path, PathBuf}, process::{Command, Stdio}, thread::sleep, time::Duration};
+use std::{env::temp_dir, fs::File, io::Write, path::{Path, PathBuf}, process::{Command, Stdio}, thread::sleep, time::Duration};
+use tokio::io::AsyncWriteExt;
+
+fn is_vc_dll_present() -> bool {
+  let system32 = std::env::var("SystemRoot").map(|root| Path::new(&root).join("System32")).unwrap_or_else(|_| PathBuf::from("C:\\Windows\\System32")); // fallback
+  let dlls = ["vcruntime140.dll", "msvcp140.dll", "vcruntime140_1.dll"];
+  dlls.iter().any(|dll| system32.join(dll).exists())
+}
+
+async fn download_vc_runtime(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+  let url = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
+  let response = reqwest::get(url).await?;
+  let bytes = response.bytes().await?;
+  let mut file = tokio::fs::File::create(path).await?;
+  file.write_all(&bytes).await?;
+  Ok(())
+}
+
+async fn install_vc_runtime(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+  let status = tokio::process::Command::new(path).args(["/quiet", "/norestart"]).stdout(Stdio::null()).stderr(Stdio::null()).status().await?;
+
+  if !status.success() {
+    return Err(format!("Installer failed with exit code: {}", status).into());
+  }
+
+  Ok(())
+}
+
+pub async fn ensure_vc_runtime() -> Result<(), Box<dyn std::error::Error>> {
+  println!("Downloading VC Runtime...");
+  let installer_path = temp_dir().join("vc_redist.x64.exe");
+
+  if !installer_path.exists() {
+    download_vc_runtime(&installer_path).await?;
+    println!("Download complete.");
+  }
+
+  println!("Installing...");
+  install_vc_runtime(&installer_path).await?;
+  println!("Installation complete.");
+
+  Ok(())
+}
 
 async fn download_msys2_installer() -> Result<PathBuf, Box<dyn std::error::Error>> {
   let repo = "msys2/msys2-installer";
@@ -101,13 +143,26 @@ fn add_to_path_env(msys_bin: &str) {
 async fn main() {
   let msys_root = Path::new(r"C:\msys64");
 
+  if !is_vc_dll_present() {
+    ensure_vc_runtime().await.unwrap();
+  }
+
   // If MSYS2 is not found, download + install it
   if !msys_root.exists() || !msys_root.join("usr/bin/bash.exe").exists() {
     let installer_path = download_msys2_installer().await.unwrap();
     if !install_msys2(&installer_path) {
       return;
     }
+
     wait_for_msys2_ready(msys_root);
+
+    if installer_path.exists() {
+      // msys2-x86_64-latest.exe
+      match std::fs::remove_file(installer_path) {
+        Ok(_) => println!("Deleted the installer file"),
+        Err(_) => eprintln!("Couldn't delete the installer file"),
+      }
+    }
   }
 
   println!("Updating MSYS2...");
@@ -116,7 +171,8 @@ async fn main() {
   }
 
   println!("Installing GTK4...");
-  if !run_bash_command("pacman -S --noconfirm mingw-w64-ucrt-x86_64-gtk4") {
+  //pacman -S --noconfirm mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-glade mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-pkg-config
+  if !run_bash_command("pacman -S --noconfirm mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-glade mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-pkg-config") {
     return;
   }
 
@@ -124,4 +180,5 @@ async fn main() {
   add_to_path_env(r"C:\msys64\ucrt64\bin");
 
   println!("✅ GTK4 setup completed successfully.");
+  sleep(Duration::from_secs(5));
 }
