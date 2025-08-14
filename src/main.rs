@@ -166,7 +166,7 @@ async fn main() {
   }
 
   println!("Updating MSYS2...");
-  if !run_bash_command("pacman -Syuu --noconfirm") {
+  if !run_bash_command("pacman -Syu --noconfirm") {
     return;
   }
 
